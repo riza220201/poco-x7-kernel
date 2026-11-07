@@ -1,0 +1,19 @@
+# config/ksunext_defconfig — KernelSU-Next ("Wild", pershoot dev-susfs) + SuSFS v2.3.0
+#
+# Composed by build.sh ON TOP OF config/vanilla_defconfig + generated brand block,
+# so ksunext inherits every vanilla scheduler/network/memory/I/O modification.
+#
+# Pinned commits and expected version numbers live in sources.lock and are
+# enforced by apply-ksunext-susfs.sh and build.sh.
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y

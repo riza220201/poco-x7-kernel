@@ -1,0 +1,35 @@
+# Build & Harvest Working Directories (large, reproducible)
+/.build/
+/out/
+/dist/
+/stock_images/
+
+# Stock firmware images — OEM firmware, not ours to redistribute;
+# tools/extract-device-material.sh regenerates everything under .build/ from them
+*.img
+
+# Packaged archives and logs
+*.zip
+*.log
+Screenshot*
+
+# AnyKernel3 vendored copy keeps its files but not its git metadata
+anykernel/.git/
+
+# Markdown is local work notes (JOURNAL.md, RESUME.md, MODIFICATIONS.md, release drafts) —
+# only the root README.md is part of the repo; release builder scripts stay local too.
+*.md
+!/README.md
+tools/*probe*
+release-*.sh
+recreate-releases.sh
+
+# Device logs from testers (personal data — never in the public repo)
+*dmesg*.txt
+*logcat*.txt
+*kmsg*.txt
+*ramoops*
+
+# Python Bytecode
+__pycache__/
+*.py[cod]

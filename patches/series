@@ -1,0 +1,23 @@
+# patches/series — applied in order by apply-mods.sh to EVERY non-stock variant,
+# onto the pristine pinned tree (sources.lock KERNEL_COMMON_REF), before ksunext.
+#
+# Each patch was generated against that tree and is applied with strict
+# `git apply` — no fuzz.
+#
+# ORDER MATTERS: each patch is stacked in order.
+#
+# columns:  <patch>  <config switch it needs, or ->  <symbol that must be in System.map>
+# build.sh checks the last two after every build: a passing KMI gate proves the
+# ABI, not the feature set — a kernel with these silently dropped gates clean too.
+# 05 has no switch or symbol of its own: gate layer 2 (lib/protect_check.py) verifies it.
+05-gki-protect-no-module-exports.patch -                    -
+10-bore-7.0.0-gki-kabi.patch    CONFIG_SCHED_BORE            sched_init_bore
+20-ntsync-mainline.patch        CONFIG_NTSYNC                ntsync_misc
+30-reflex-0.4.0.patch           CONFIG_CPU_FREQ_GOV_REFLEX   reflex_gov
+40-malachite-balance.patch      CONFIG_MALACHITE_BALANCE     malachite_balance_init
+50-adios-3.3.0.patch            CONFIG_MQ_IOSCHED_ADIOS      mq_adios
+60-kcompressd-0.5-gki.patch     CONFIG_KCOMPRESSD            kcompressd_nodes
+70-le9uo-1.14.patch             -                            sysctl_workingset_protection
+# 80 is KMI-sensitive (touches tcp_sock / tcp_congestion_ops): BUILD_BUG_ONs in
+# tcp_bbr.c pin the struct sizes; gate layers 1 & 4 verify the CRCs.
+80-bbr3-gki-kabi.patch          CONFIG_TCP_CONG_BBR          bbr_skb_marked_lost

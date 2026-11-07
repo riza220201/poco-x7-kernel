@@ -1,0 +1,35 @@
+# sources.lock — the single source of truth for every out-of-tree commit this
+# project builds from. A branch name is not a pin: branches move, and a build
+# that cannot be re-run is not a build you can stand behind.
+#
+# Sourced by build.sh and the apply-* scripts. Env overrides anything here.
+
+# ── Kernel source: Google ACK android14-6.1-lts ──────────────────────────────
+KERNEL_COMMON_URL="https://android.googlesource.com/kernel/common"
+KERNEL_COMMON_BRANCH="android14-6.1-lts"
+KERNEL_COMMON_UPSTREAM_REF="fcab623b3d2b0107e56b44e4e791f9a1cc5ad0ff"
+KERNEL_COMMON_REF="62c482ad8df29a7af30bbe2fa0dcb8098b3f1bc9"
+KERNEL_COMMON_VERSION="6.1.182"   # android14-11, module_layout=0xea759d7f, 7,996/7,996 stock CRCs matched
+
+# ── Toolchain (Neutron clang 24) ─────────────────────────────────────────────
+CLANG_VERSION="neutron-clang-06092026 (clang 24.0.0git, llvm f42c87ba)"
+
+# ── ksunext variant: KernelSU-Next v3.4.2 "Wild" (pershoot dev-susfs) + SusFS v2.3.0 ──
+# SusFS is IN-DRIVER on pershoot's dev-susfs, so there is NO 10_enable_susfs_for_ksu
+# patch (which is only for stock KernelSU).
+WILDKSU_REF="68b906982144bc7c63751c4d20b03ac1abc1d82c"      # pershoot/KernelSU-Next dev-susfs (malachite-pin-20261107)
+WILDKSU_VERBASE="0c9c4438a6273c5bd80c9fd8816a4c9801e108fe"  # version anchor = merge-base with upstream dev (v3.4.2-110-g0c9c4438)
+WILDKSU_VER_EXPECT="33465"                                   # 30000 + rev-count(VERBASE); apply script DIES on drift
+SUSFS_REF="e3d5ec08b94a3639a585b4c93b80b1cfe2b3d188"        # simonpunk gki-android14-6.1 5f85e6e + 2 pershoot picks (malachite-susfs-20261107)
+
+# ── Source modifications — VENDORED in patches/ ───────────────────────────────
+# Each patch is generated against KERNEL_COMMON_REF and applied with strict
+# `git apply` (patches/series).
+BORE_UPSTREAM="firelzrd/bore-scheduler@1e2f57a (BORE 7.0.0 backported to 6.1 CFS with KABI-safe sched_entity packing)"
+NTSYNC_UPSTREAM="torvalds/linux v6.14 drivers/misc/ntsync.c + fixes 61611481f7b5, 180a232ea780"
+REFLEX_UPSTREAM="firelzrd/reflex@f0a6678 (Reflex v0.4.0 CPUFreq governor backported to 6.1)"
+BALANCE_UPSTREAM="malachite_balance.c for MT6878 4xA55 [0-3] + 4xA78 [4-7] (cl_cpu = {0, 4})"
+ADIOS_UPSTREAM="firelzrd/adios@6fa79e3 (ADIOS 3.3.0 backported to 6.1 blk-mq)"
+KCOMPRESSD_UPSTREAM="firelzrd/kcompressd-unofficial@3a42168 (Kcompressd 0.5 adapted for 6.1 swap_writepage)"
+LE9UO_UPSTREAM="firelzrd/le9uo@9d378d1^ (le9uo 1.14 workingset protection adapted for 6.1 mm/vmscan.c)"
+BBR3_UPSTREAM="google/bbr v3 (CachyOS 0002-bbr3.patch adapted for 6.1 GKI KABI: icsk_ca_priv=104B, tcp_sock=2368B)"

@@ -1,0 +1,79 @@
+# config/vanilla_defconfig — KMI-safe tweaks on top of stock gki_defconfig
+# for Xiaomi Poco X7 / Redmi Note 14 Pro 5G (malachite, MT6878, android14-6.1).
+#
+# Merged onto gki_defconfig by build.sh via scripts/kconfig/merge_config.sh,
+# followed by olddefconfig. build.sh then ENFORCES that every line here survived
+# into the final .config and that every patch in patches/series has its symbol
+# in System.map.
+
+# ── Default queue discipline: fq ───────────────────────────────────────────
+# gki_defconfig already builds sch_fq (CONFIG_NET_SCH_FQ=y) and sch_fq_codel,
+# but leaves the default qdisc at pfifo_fast. BBRv3 (enabled below) is designed
+# to pair with fq, which provides per-flow pacing and isolation.
+# Gated behind `menuconfig NET_SCH_DEFAULT` (net/sched/Kconfig).
+CONFIG_NET_SCH_DEFAULT=y
+CONFIG_DEFAULT_FQ=y
+
+# ── CAKE qdisc ─────────────────────────────────────────────────────────────
+# Modern AQM for bufferbloat mitigation on mobile uplinks; selectable at runtime
+# with tc while the default stays fq.
+CONFIG_NET_SCH_CAKE=y
+
+# ── TTL / hop-limit netfilter targets ──────────────────────────────────────
+# Allows normalising TTL/hop-limit for tethered traffic. Self-contained leaf
+# netfilter targets; no core struct is touched.
+CONFIG_NETFILTER_XT_TARGET_HL=y
+CONFIG_IP_NF_TARGET_TTL=y
+CONFIG_IP6_NF_TARGET_HL=y
+
+# ── TCP congestion control: BBRv3 as default ───────────────────────────────
+# gki_defconfig on android14-6.1 has # CONFIG_TCP_CONG_ADVANCED is not set and
+# only builds CUBIC. Opening TCP_CONG_ADVANCED flips BIC, WESTWOOD, and HTCP to
+# their Kconfig default of =m, so every option behind the gate is pinned
+# explicitly here as built-in (=y) or off.
+# Backed by 80-bbr3-gki-kabi.patch (Google BBRv3 with KABI-preserved tcp_sock).
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_CUBIC=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_TCP_CONG_WESTWOOD=y
+CONFIG_TCP_CONG_HTCP=y
+CONFIG_TCP_CONG_VEGAS=y
+# CONFIG_TCP_CONG_BIC is not set
+CONFIG_DEFAULT_BBR=y
+
+# ── ZRAM high-compression backend (6.1 Crypto API) ─────────────────────────
+# Unlike 6.12, Linux 6.1's drivers/block/zram/zcomp.c queries the kernel Crypto
+# API via crypto_has_comp() / crypto_alloc_comp(), so building CONFIG_CRYPTO_LZ4HC=y
+# into vmlinux makes lz4hc available to the stock system_dlkm/zram.ko module.
+# (CONFIG_CRYPTO_LZO=y, CONFIG_CRYPTO_LZ4=y, CONFIG_CRYPTO_ZSTD=y are already =y
+# in gki_defconfig, and CONFIG_ZRAM stays =m to match stock and protect recovery.)
+CONFIG_CRYPTO_LZ4HC=y
+
+# ── Source patches (apply-mods.sh, patches/series) ─────────────────────────
+# Each switch below is backed by a patch in patches/; build.sh verifies both the
+# Kconfig state in .config and the probe symbol in System.map, and the 4-layer
+# gate verifies 0 KMI/ABI drift against all 464 vendor + 60 system_dlkm modules
+# and all 7,996 stock vmlinux exports.
+#
+# BORE 7.0.0 — burst-aware CFS scheduler (10-bore-7.0.0-gki-kabi.patch).
+#   Per-entity state packed into sched_entity's android_kabi_reserved3:32..63.
+#   Runtime toggle: /proc/sys/kernel/sched_bore (1 = on, 0 = stock CFS).
+CONFIG_SCHED_BORE=y
+# ntsync — complete mainline v6.14+ driver (/dev/ntsync for Wine/Proton/Winlator).
+CONFIG_NTSYNC=y
+# Reflex CPUFreq governor v0.4.0 — built-in (=y), selectable at runtime per policy
+#   via scaling_governor (default governor remains schedutil).
+CONFIG_CPU_FREQ_GOV_REFLEX=y
+# malachite_balance — boot boost, touch floor, and screen-off cap via freq_qos
+#   for MediaTek Dimensity 7300-Ultra (MT6878, policies 0 and 4).
+#   Tunables: /sys/module/malachite_balance/parameters/
+CONFIG_MALACHITE_BALANCE=y
+# ADIOS 3.3.0 blk-mq I/O scheduler — selectable per block device at runtime;
+#   default elevator stays mq-deadline.
+CONFIG_MQ_IOSCHED_ADIOS=y
+# CONFIG_MQ_IOSCHED_DEFAULT_ADIOS is not set
+# Kcompressd 0.5 — offloads zram-bound anonymous page compression out of kswapd
+#   to per-node kcompressd kthreads. Runtime tunable: vm.kcompressd.
+CONFIG_KCOMPRESSD=y
+# le9uo 1.14 workingset protection is compiled in dormant (no Kconfig switch;
+#   runtime tunable: vm.workingset_protection, default 0).
