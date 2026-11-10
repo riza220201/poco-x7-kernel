@@ -2,7 +2,7 @@
 
 A GKI build-and-gate pipeline for the **Xiaomi Poco X7 / Redmi Note 14 Pro 5G (`malachite`, MediaTek Dimensity 7300-Ultra `MT6878`, `android14-6.1-lts`)**.
 
-> **Status:** **v1 (`20261107`)** — built from Google ACK `android14-6.1-lts` (**Linux 6.1.182**, 67 LTS releases ahead of stock `6.1.115`) with **Neutron Clang 24** (`06092026`, LLVM `f42c87ba`), integrating **BORE 7.0.0**, **Google BBRv3**, **Reflex 0.4.0**, **`malachite_balance`**, **ADIOS 3.3.0**, **Kcompressd 0.5**, **le9uo 1.14**, **ntsync**, **LZ4HC ZRAM**, and **KernelSU-Next 33465** (`v3.4.2-110-g0c9c4438`, **uapi 6**) + **SuSFS v2.3.0** (`e3d5ec08b94a`) — is built, gated clean across all **524 device modules** (`464 vendor + 60 system_dlkm`) and all **7,996 stock `vmlinux` exports**, self-tested, and packaged.
+> **Status:** **v2 (`20261110`)** — built from Google ACK `android14-6.1-lts` (**Linux 6.1.182**, 67 LTS releases ahead of stock `6.1.115`) with **Neutron Clang 24** (`06092026`, LLVM `f42c87ba`), integrating **BORE 7.0.0**, **Google BBRv3**, **Reflex 0.4.0**, **`malachite_balance`**, **ADIOS 3.3.0**, **Kcompressd 0.5**, **le9uo 1.14**, **ntsync**, **LZ4HC ZRAM**, and **KernelSU-Next 33465** (`v3.4.2-110-g0c9c4438`, **uapi 6**) + **SuSFS v2.3.0** (`e3d5ec08b94a`) — is built, gated clean across all **524 device modules** (`464 vendor + 60 system_dlkm`) and all **7,996 stock `vmlinux` exports**, self-tested, and packaged. **v2 fixes a kernel panic in v1 that hit on the first `fsync` after the ADIOS I/O scheduler was selected**; the default `mq-deadline` was never affected.
 
 ## Variants & Features
 
@@ -39,6 +39,12 @@ bash test/kmi-gate-selftest.sh
 bash test/protect-gate-selftest.sh
 bash test/import-gate-selftest.sh
 bash test/stock-symvers-gate-selftest.sh
+```
+
+The gate proves the ABI, not that a feature runs: v1 passed all of the above and still panicked once ADIOS was selected. `test/adios-qemu-selftest.sh` boots a built `Image` in QEMU and drives `fsync`, journal-commit and f2fs-checkpoint I/O through ADIOS on loop devices, with `mq-deadline` as the positive control and the v1 `Image` as the negative one (needs `qemu-system-aarch64`, `mkfs.ext4`, `mkfs.f2fs`):
+
+```bash
+test/adios-qemu-selftest.sh          # after ./build.sh <variant>; ~35 s
 ```
 
 ## Critical KMI Invariants on `android14-6.1`
@@ -90,6 +96,7 @@ tools/extract-stock-symvers.py  extracts Module.symvers directly from stock Imag
 tools/harvest-kmi-ref.py        harvests per-module imports/exports/vermagic TSVs from .ko trees
 tools/vmlinux-only-symvers.py   filters Module.symvers down to vmlinux-only exports
 test/*-gate-selftest.sh         17 positive & negative unit tests for all 4 gate layers
+test/adios-qemu-selftest.sh     boots the built Image in QEMU and runs fsync/FUA-heavy I/O through ADIOS
 ```
 
 ## Credits

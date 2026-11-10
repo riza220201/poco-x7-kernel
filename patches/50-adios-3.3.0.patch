@@ -5,10 +5,28 @@ Port     : dropped the out-of-tree 'all:/clean:' make targets the patch appends 
            block/Makefile. MQ_IOSCHED_DEFAULT_ADIOS stays off: the default elevator
            is unchanged (mq-deadline on this single-queue UFS); select per device via
            /sys/block/<dev>/queue/scheduler.
+6.1 fix  : (2026-11-10, after the v1 bug report) on 6.1 a request can reach ADIOS
+           with NO adios_rq_data. blk_mq_rq_ctx_init() skips ->prepare_request()
+           for REQ_PREFLUSH/REQ_FUA requests and sets RQF_ELVPRIV only on the ones
+           it prepared (6.5+ prepares every scheduler-owned request, which is what
+           upstream ADIOS relies on), yet they keep RQF_ELV, so
+           ->completed_request() ran with rq->elv.priv[0] == NULL. v1 panicked on
+           the first fsync after 'echo adios > .../queue/scheduler':
+             Unable to handle kernel NULL pointer dereference at ...0034
+             pc : adios_completed_request+0x2c   (rd->managed, rd == NULL)
+           Now get_rq_data() returns NULL unless RQF_ELVPRIV is set, and the three
+           places that can meet such a request cope with it:
+             - adios_completed_request(): treated as unmanaged (no accounting, no
+               latency sample);
+             - adios_insert_requests(): a flush-flagged request requeued without
+               RQF_DONTPREP goes to the priority queue, unaccounted;
+             - adios_prepare_request(): a failed GFP_ATOMIC mempool_alloc() is no
+               longer memset() (reachable once nr_requests is raised after init).
+           Regression test: test/adios-qemu-selftest.sh boots the built Image.
 KMI      : new self-contained elevator; no struct change.
 
 diff --git a/block/Kconfig.iosched b/block/Kconfig.iosched
-index 27f11320b..e98585dd8 100644
+index 6155161..883f6ae 100644
 --- a/block/Kconfig.iosched
 +++ b/block/Kconfig.iosched
 @@ -16,6 +16,20 @@ config MQ_IOSCHED_KYBER
@@ -33,7 +51,7 @@ index 27f11320b..e98585dd8 100644
  	tristate "BFQ I/O scheduler"
  	select BLK_ICQ
 diff --git a/block/Makefile b/block/Makefile
-index ddfd21c1a..1f13cda83 100644
+index 4e01bb7..ecd05a2 100644
 --- a/block/Makefile
 +++ b/block/Makefile
 @@ -23,6 +23,7 @@ obj-$(CONFIG_BLK_CGROUP_IOLATENCY)	+= blk-iolatency.o
@@ -46,10 +64,10 @@ index ddfd21c1a..1f13cda83 100644
  
 diff --git a/block/adios.c b/block/adios.c
 new file mode 100644
-index 000000000..853194d4a
+index 0000000..bf8c7bb
 --- /dev/null
 +++ b/block/adios.c
-@@ -0,0 +1,1988 @@
+@@ -0,0 +1,2017 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Adaptive Deadline I/O Scheduler (ADIOS)
@@ -743,9 +761,21 @@ index 000000000..853194d4a
 +	return (rq->cmd_flags & REQ_OP_MASK) != REQ_OP_READ;
 +}
 +
-+// Helper function to retrieve adios_rq_data from a request
++/*
++ * Helper function to retrieve adios_rq_data from a request
++ *
++ * Linux 6.1 port: this returns NULL for a request that has no adios_rq_data,
++ * and every caller that is handed an arbitrary request must cope with that.
++ * In 6.1, blk_mq_rq_ctx_init() skips ->prepare_request() for REQ_PREFLUSH and
++ * REQ_FUA requests and sets RQF_ELVPRIV only on the ones it did prepare, yet
++ * the flush-flagged ones still carry RQF_ELV: ->completed_request() runs for
++ * every one of them, and ->insert_requests() is handed one when it is requeued
++ * without RQF_DONTPREP. (Since 6.5 every scheduler-owned request is prepared,
++ * which is what upstream ADIOS relies on.) rq->elv.priv[0] is also NULL when
++ * adios_prepare_request() could not allocate.
++ */
 +static inline struct adios_rq_data *get_rq_data(struct request *rq) {
-+	return rq->elv.priv[0];
++	return (rq->rq_flags & RQF_ELVPRIV) ? rq->elv.priv[0] : NULL;
 +}
 +
 +static inline
@@ -953,12 +983,16 @@ index 000000000..853194d4a
 +		struct request *rq, bool pq_idx) {
 +	struct adios_rq_data *rd = get_rq_data(rq);
 +
-+	/* We're sure that rd->managed == true */
-+	union adios_in_flight_rqs ifr = {
-+		.count          = 1,
-+		.total_pred_lat = rd->pred_lat,
-+	};
-+	atomic64_add(ifr.scalar, &ad->in_flight_rqs.atomic);
++	/* A request without adios_rq_data (see get_rq_data()) is queued here but
++	 * never accounted: adios_completed_request() skips it the same way. */
++	if (likely(rd)) {
++		/* We're sure that rd->managed == true */
++		union adios_in_flight_rqs ifr = {
++			.count          = 1,
++			.total_pred_lat = rd->pred_lat,
++		};
++		atomic64_add(ifr.scalar, &ad->in_flight_rqs.atomic);
++	}
 +
 +	scoped_guard(spinlock_irqsave, &ad->pq_lock) {
 +		bool was_empty = list_empty(&ad->prio_queue[pq_idx]);
@@ -1040,7 +1074,12 @@ index 000000000..853194d4a
 +		}
 +		rq = list_first_entry(list, struct request, queuelist);
 +		list_del_init(&rq->queuelist);
-+		if (likely(ad->models_stable))
++		/* No adios_rq_data (see get_rq_data()): the deadline tree and the
++		 * latency model cannot track it, so it takes the priority queue,
++		 * which only links rq->queuelist. */
++		if (unlikely(!get_rq_data(rq)))
++			insert_to_prio_queue(ad, rq, !at_head);
++		else if (likely(ad->models_stable))
 +			insert_request_post_stability(hctx, rq, at_head, &free);
 +		else
 +			insert_request_pre_stability(hctx, rq, at_head, &free);
@@ -1054,10 +1093,15 @@ index 000000000..853194d4a
 +	struct adios_data *ad = rq->q->elevator->elevator_data;
 +	struct adios_rq_data *rd;
 +
++	/* GFP_ATOMIC: NULL once the slab and the pool's reserve are both empty,
++	 * which nr_requests raised after init allows. get_rq_data() callers cope. */
 +	rd = mempool_alloc(ad->rq_data_pool, GFP_ATOMIC);
++	rq->elv.priv[0] = rd;
++	if (unlikely(!rd))
++		return;
++
 +	memset(rd, 0, sizeof(*rd));
 +	rd->rq = rq;
-+	rq->elv.priv[0] = rd;
 +}
 +
 +static struct adios_rq_data *get_dl_first_rd(struct adios_data *ad, bool idx) {
@@ -1374,7 +1418,9 @@ index 000000000..853194d4a
 +	struct adios_rq_data *rd = get_rq_data(rq);
 +	union adios_in_flight_rqs ifr = { .scalar = 0 };
 +
-+	if (rd->managed) {
++	/* rd is NULL for the flush-flagged requests of Linux 6.1 (see
++	 * get_rq_data()); they are handled like any other unmanaged request. */
++	if (rd && rd->managed) {
 +		union adios_in_flight_rqs ifr_to_sub = {
 +			.count          = 1,
 +			.total_pred_lat = rd->pred_lat,
@@ -1402,7 +1448,8 @@ index 000000000..853194d4a
 +	u64 lct = pc->last_completed_time ?: rq->io_start_time_ns;
 +	pc->last_completed_time = (ifr.count) ? now : 0;
 +
-+	if (!rq->io_start_time_ns || !rd->block_size || unlikely(now < lct)) {
++	if (!rd || !rq->io_start_time_ns || !rd->block_size ||
++			unlikely(now < lct)) {
 +		local_irq_restore(flags);
 +		return;
 +	}
@@ -1439,7 +1486,7 @@ index 000000000..853194d4a
 +
 +	if (rq->elv.priv[0]) {
 +		// Free adios_rq_data back to the memory pool
-+		mempool_free(get_rq_data(rq), ad->rq_data_pool);
++		mempool_free(rq->elv.priv[0], ad->rq_data_pool);
 +		rq->elv.priv[0] = NULL;
 +	}
 +}
@@ -2040,6 +2087,7 @@ index 000000000..853194d4a
 +MODULE_DESCRIPTION(ADIOS_PROGNAME);
 \ No newline at end of file
 diff --git a/block/elevator.c b/block/elevator.c
+index 0628811..04172d1 100644
 --- a/block/elevator.c
 +++ b/block/elevator.c
 @@ -638,11 +638,16 @@ static struct elevator_type *elevator_get_default(struct request_queue *q)
