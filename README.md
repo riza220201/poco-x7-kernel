@@ -23,7 +23,7 @@ A GKI build-and-gate pipeline for the **Xiaomi Poco X7 / Redmi Note 14 Pro 5G (`
 
 Not "a kernel with tweaks". A **four-layer gate that refuses to ship a kernel that would brick the device or break its modules**, built and proven able to fail before any feature was added.
 
-This phone ships a stock Google-built GKI (`6.1.115-android14-11-gfaa9b1b32a11-ab13269000`). Its **464 vendor modules** (`37 vendor_boot + 427 vendor_dlkm`) and **60 `system_dlkm` modules** are signed blobs we cannot rebuild, and they agree on `module_layout 0xea759d7f` and **7,996 `vmlinux` symbol CRCs**. Get one wrong — or leave a GKI module export on `CONFIG_MODULE_SIG_PROTECT`'s protected list — and modules fail to load (no Wi-Fi, no Bluetooth, no 5G/RIL, no touch, no display).
+This phone ships a stock Google-built GKI (`6.1.115-android14-11-gfaa9b1b32a11-ab13269000`). Its **464 vendor modules** (`223 vendor_boot + 241 vendor_dlkm`) and **60 `system_dlkm` modules** are signed blobs we cannot rebuild, and they agree on `module_layout 0xea759d7f` and **7,996 `vmlinux` symbol CRCs**. Get one wrong — or leave a GKI module export on `CONFIG_MODULE_SIG_PROTECT`'s protected list — and modules fail to load (no Wi-Fi, no Bluetooth, no 5G/RIL, no touch, no display).
 
 ```text
 layer 1  symbol CRCs & module_layout (0xea759d7f) against 464 vendor + 60 system_dlkm modules
